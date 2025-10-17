@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Tic-Tac-Toe</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+
+        .container {
+            text-align: center;
+            max-width: 600px;
+            width: 90%;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .status-bar {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .status-text {
+            font-size: 1.2rem;
+            font-weight: 500;
+        }
+
+        .player-info {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            max-width: 400px;
+            margin: 0 auto 2rem;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        .cell {
+            aspect-ratio: 1;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            border-radius: 10px;
+            font-size: 3rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: white;
+        }
+
+        .cell:hover:not(:disabled) {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.05);
+        }
+
+        .cell:disabled {
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .cell.x {
+            color: #4CAF50;
+        }
+
+        .cell.o {
+            color: #FF5252;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            background: white;
+            color: #667eea;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .metrics {
+            margin-top: 2rem;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 1rem;
+            font-size: 0.9rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
+        .metric-item {
+            background: rgba(255,255,255,0.1);
+            padding: 0.5rem;
+            border-radius: 5px;
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .winner-animation {
+            animation: pulse 0.5s ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            background: rgba(76, 175, 80, 0.9);
+        }
+
+        .connection-status.disconnected {
+            background: rgba(244, 67, 54, 0.9);
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status" id="connectionStatus">Connected</div>
+    
+    <div class="container">
+        <h1>🎮 Multiplayer Tic-Tac-Toe</h1>
+        
+        <div class="status-bar">
+            <div class="status-text" id="statusText">Click "Find Game" to start</div>
+            <div class="player-info">
+                <span id="playerInfo"></span>
+                <span id="turnInfo"></span>
+            </div>
+        </div>
+
+        <div class="game-board hidden" id="gameBoard">
+            <button class="cell" data-index="0"></button>
+            <button class="cell" data-index="1"></button>
+            <button class="cell" data-index="2"></button>
+            <button class="cell" data-index="3"></button>
+            <button class="cell" data-index="4"></button>
+            <button class="cell" data-index="5"></button>
+            <button class="cell" data-index="6"></button>
+            <button class="cell" data-index="7"></button>
+            <button class="cell" data-index="8"></button>
+        </div>
+
+        <div class="controls">
+            <button id="findGameBtn">Find Game</button>
+            <button id="newGameBtn" class="hidden">New Game</button>
+        </div>
+
+        <div class="metrics">
+            <div><strong>Server Metrics</strong></div>
+            <div class="metrics-grid" id="metricsGrid">
+                <div class="metric-item">
+                    <div class="metric-value" id="activePlayers">0</div>
+                    <div>Active Players</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value" id="activeGames">0</div>
+                    <div>Active Games</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-value" id="totalGames">0</div>
+                    <div>Total Games</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentRoomId = null;
+        let mySymbol = null;
+        let gameActive = false;
+
+        const statusText = document.getElementById('statusText');
+        const playerInfo = document.getElementById('playerInfo');
+        const turnInfo = document.getElementById('turnInfo');
+        const gameBoard = document.getElementById('gameBoard');
+        const findGameBtn = document.getElementById('findGameBtn');
+        const newGameBtn = document.getElementById('newGameBtn');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const cells = document.querySelectorAll('.cell');
+
+        // Connection status
+        socket.on('connect', () => {
+            connectionStatus.textContent = 'Connected';
+            connectionStatus.classList.remove('disconnected');
+            console.log('Connected to server');
+        });
+
+        socket.on('disconnect', () => {
+            connectionStatus.textContent = 'Disconnected';
+            connectionStatus.classList.add('disconnected');
+            gameActive = false;
+        });
+
+        socket.on('connected', (data) => {
+            console.log('Player ID:', data.playerId);
+            updateMetrics(data.metrics);
+        });
+
+        // Find game
+        findGameBtn.addEventListener('click', () => {
+            socket.emit('findGame');
+            findGameBtn.disabled = true;
+            statusText.textContent = 'Searching for opponent...';
+        });
+
+        socket.on('waiting', (data) => {
+            statusText.textContent = data.message;
+        });
+
+        // Game start
+        socket.on('gameStart', (data) => {
+            currentRoomId = data.roomId;
+            mySymbol = data.symbol;
+            gameActive = true;
+            
+            gameBoard.classList.remove('hidden');
+            findGameBtn.classList.add('hidden');
+            newGameBtn.classList.add('hidden');
+            
+            playerInfo.textContent = `You are ${mySymbol}`;
+            updateGameState(data.gameState);
+            
+            statusText.textContent = `Game started! Playing against ${data.opponent}`;
+            console.log('Game started:', data);
+        });
+
+        // Game update
+        socket.on('gameUpdate', (gameState) => {
+            updateGameState(gameState);
+        });
+
+        // Game end
+        socket.on('gameEnd', (data) => {
+            gameActive = false;
+            cells.forEach(cell => cell.disabled = true);
+            
+            let message;
+            if (data.isDraw) {
+                message = "It's a draw!";
+            } else if (data.winner === mySymbol) {
+                message = '🎉 You won!';
+            } else {
+                message = '😔 You lost!';
+            }
+            
+            statusText.textContent = `${message} (${data.moves} moves in ${data.duration.toFixed(1)}s)`;
+            statusText.classList.add('winner-animation');
+            
+            newGameBtn.classList.remove('hidden');
+            
+            setTimeout(() => {
+                statusText.classList.remove('winner-animation');
+            }, 500);
+        });
+
+        socket.on('opponentDisconnected', (data) => {
+            gameActive = false;
+            statusText.textContent = data.message;
+            cells.forEach(cell => cell.disabled = true);
+            newGameBtn.classList.remove('hidden');
+        });
+
+        // Handle moves
+        cells.forEach(cell => {
+            cell.addEventListener('click', () => {
+                if (!gameActive) return;
+                
+                const position = parseInt(cell.dataset.index);
+                socket.emit('makeMove', { roomId: currentRoomId, position });
+            });
+        });
+
+        function updateGameState(gameState) {
+            // Update board
+            gameState.board.forEach((value, index) => {
+                const cell = cells[index];
+                cell.textContent = value || '';
+                cell.disabled = value !== null || !gameActive;
+                
+                if (value) {
+                    cell.classList.add(value.toLowerCase());
+                }
+            });
+
+            // Update turn info
+            if (gameActive) {
+                const isMyTurn = gameState.currentTurn === mySymbol;
+                turnInfo.textContent = isMyTurn ? '🟢 Your turn' : '🔴 Opponent\'s turn';
+                
+                cells.forEach(cell => {
+                    if (cell.textContent === '') {
+                        cell.disabled = !isMyTurn;
+                    }
+                });
+            }
+        }
+
+        // New game
+        newGameBtn.addEventListener('click', () => {
+            resetGame();
+            socket.emit('findGame');
+            findGameBtn.disabled = true;
+            newGameBtn.classList.add('hidden');
+            statusText.textContent = 'Searching for opponent...';
+        });
+
+        function resetGame() {
+            cells.forEach(cell => {
+                cell.textContent = '';
+                cell.disabled = false;
+                cell.classList.remove('x', 'o');
+            });
+            playerInfo.textContent = '';
+            turnInfo.textContent = '';
+            gameBoard.classList.add('hidden');
+            currentRoomId = null;
+            mySymbol = null;
+            gameActive = false;
+        }
+
+        // Metrics
+        socket.on('metrics', (data) => {
+            updateMetrics(data);
+        });
+
+        function updateMetrics(data) {
+            if (data.activePlayers !== undefined) {
+                document.getElementById('activePlayers').textContent = data.activePlayers || data.activeConnections || 0;
+            }
+            if (data.activeGames !== undefined) {
+                document.getElementById('activeGames').textContent = data.activeGames || data.gamesInProgress || 0;
+            }
+            if (data.totalGames !== undefined) {
+                document.getElementById('totalGames').textContent = data.totalGames || 0;
+            }
+        }
+
+        // Request metrics every 5 seconds
+        setInterval(() => {
+            socket.emit('getMetrics');
+        }, 5000);
+
+        // Error handling
+        socket.on('error', (data) => {
+            console.error('Error:', data.message);
+        });
+    </script>
+</body>
+</html>

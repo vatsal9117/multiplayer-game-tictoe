@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Load Test Dashboard</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 2rem;
+            color: white;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .controls {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .control-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        button {
+            flex: 1;
+            padding: 1rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .start-btn {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .stop-btn {
+            background: #f44336;
+            color: white;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .logs {
+            background: rgba(0,0,0,0.3);
+            border-radius: 15px;
+            padding: 1.5rem;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .log-entry {
+            margin-bottom: 0.5rem;
+            padding: 0.25rem;
+        }
+
+        .log-info { color: #81C784; }
+        .log-success { color: #4CAF50; font-weight: bold; }
+        .log-error { color: #f44336; }
+        .log-warning { color: #FFC107; }
+
+        .chart-container {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .latency-bars {
+            display: flex;
+            align-items: flex-end;
+            height: 150px;
+            gap: 2px;
+            margin-top: 1rem;
+        }
+
+        .latency-bar {
+            flex: 1;
+            background: linear-gradient(to top, #4CAF50, #81C784);
+            border-radius: 2px 2px 0 0;
+            transition: height 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Load Test Dashboard</h1>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="numBots">Number of Simulated Players</label>
+                <input type="number" id="numBots" value="50" min="2" max="500" step="10">
+            </div>
+
+            <div class="button-group">
+                <button class="start-btn" id="startBtn">Start Load Test</button>
+                <button class="stop-btn" id="stopBtn" disabled>Stop Test</button>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Connected Bots</div>
+                <div class="stat-value" id="connectedBots">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Games</div>
+                <div class="stat-value" id="activeGames">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Games</div>
+                <div class="stat-value" id="totalGames">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Latency</div>
+                <div class="stat-value" id="avgLatency">0ms</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Moves</div>
+                <div class="stat-value" id="totalMoves">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Errors</div>
+                <div class="stat-value" id="errors" style="color: #f44336;">0</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h3>Latency Chart (Last 50 operations)</h3>
+            <div class="latency-bars" id="latencyChart"></div>
+        </div>
+
+        <div class="logs" id="logs">
+            <div class="log-entry log-info">Ready to start load test...</div>
+        </div>
+    </div>
+
+    <script>
+        const bots = [];
+        const stats = {
+            connected: 0,
+            activeGames: 0,
+            totalGames: 0,
+            totalMoves: 0,
+            errors: 0,
+            latencies: []
+        };
+
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const numBotsInput = document.getElementById('numBots');
+
+        class Bot {
+            constructor(id) {
+                this.id = id;
+                this.socket = null;
+                this.roomId = null;
+                this.symbol = null;
+                this.gameActive = false;
+            }
+
+            connect() {
+                this.socket = io({
+                    transports: ['websocket'],
+                    reconnection: false
+                });
+
+                this.socket.on('connect', () => {
+                    stats.connected++;
+                    log(`Bot ${this.id} connected`, 'success');
+                    updateStats();
+                    this.setupListeners();
+                    
+                    // Auto-find game after connect
+                    setTimeout(() => this.findGame(), Math.random() * 1000);
+                });
+
+                this.socket.on('connect_error', () => {
+                    stats.errors++;
+                    log(`Bot ${this.id} connection failed`, 'error');
+                    updateStats();
+                });
+
+                this.socket.on('disconnect', () => {
+                    stats.connected--;
+                    updateStats();
+                });
+            }
+
+            setupListeners() {
+                this.socket.on('gameStart', (data) => {
+                    this.roomId = data.roomId;
+                    this.symbol = data.symbol;
+                    this.gameActive = true;
+                    stats.totalGames++;
+                    
+                    log(`Bot ${this.id} (${this.symbol}) started game`, 'info');
+                    updateStats();
+
+                    if (this.symbol === 'X') {
+                        setTimeout(() => this.makeMove(), 500);
+                    }
+                });
+
+                this.socket.on('gameUpdate', (gameState) => {
+                    if (gameState.currentTurn === this.symbol && this.gameActive) {
+                        setTimeout(() => this.makeMove(), 500);
+                    }
+                });
+
+                this.socket.on('gameEnd', () => {
+                    this.gameActive = false;
+                    log(`Bot ${this.id} game completed`, 'success');
+                    
+                    // Play another game
+                    setTimeout(() => this.findGame(), 2000);
+                });
+
+                this.socket.on('error', (data) => {
+                    stats.errors++;
+                    updateStats();
+                });
+            }
+
+            findGame() {
+                if (this.socket && this.socket.connected && !this.gameActive) {
+                    this.socket.emit('findGame');
+                }
+            }
+
+            makeMove() {
+                if (!this.gameActive) return;
+
+                const position = Math.floor(Math.random() * 9);
+                const startTime = Date.now();
+                
+                this.socket.emit('makeMove', { roomId: this.roomId, position });
+                
+                const latency = Date.now() - startTime;
+                stats.latencies.push(latency);
+                if (stats.latencies.length > 50) {
+                    stats.latencies.shift();
+                }
+                
+                stats.totalMoves++;
+                updateStats();
+                updateChart();
+            }
+
+            disconnect() {
+                if (this.socket) {
+                    this.socket.disconnect();
+                }
+            }
+        }
+
+        function startLoadTest() {
+            const numBots = parseInt(numBotsInput.value);
+            
+            log(`Starting load test with ${numBots} bots...`, 'info');
+            
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            numBotsInput.disabled = true;
+
+            // Create bots in batches
+            const BATCH_SIZE = 10;
+            let created = 0;
+
+            const createBatch = () => {
+                for (let i = 0; i < BATCH_SIZE && created < numBots; i++, created++) {
+                    const bot = new Bot(created + 1);
+                    bots.push(bot);
+                    bot.connect();
+                }
+
+                if (created < numBots) {
+                    setTimeout(createBatch, 500);
+                } else {
+                    log(`All ${numBots} bots created!`, 'success');
+                }
+            };
+
+            createBatch();
+
+            // Poll server metrics
+            setInterval(pollServerMetrics, 2000);
+        }
+
+        function stopLoadTest() {
+            log('Stopping load test...', 'warning');
+            
+            bots.forEach(bot => bot.disconnect());
+            bots.length = 0;
+
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            numBotsInput.disabled = false;
+
+            log('Load test stopped', 'success');
+            printFinalStats();
+        }
+
+        function pollServerMetrics() {
+            fetch('/metrics')
+                .then(res => res.json())
+                .then(data => {
+                    stats.activeGames = data.gamesInProgress || 0;
+                    updateStats();
+                })
+                .catch(() => {});
+        }
+
+        function updateStats() {
+            document.getElementById('connectedBots').textContent = stats.connected;
+            document.getElementById('activeGames').textContent = stats.activeGames;
+            document.getElementById('totalGames').textContent = stats.totalGames;
+            document.getElementById('totalMoves').textContent = stats.totalMoves;
+            document.getElementById('errors').textContent = stats.errors;
+
+            const avgLatency = stats.latencies.length > 0
+                ? (stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length).toFixed(0)
+                : 0;
+            document.getElementById('avgLatency').textContent = avgLatency + 'ms';
+        }
+
+        function updateChart() {
+            const chart = document.getElementById('latencyChart');
+            chart.innerHTML = '';
+
+            const maxLatency = Math.max(...stats.latencies, 100);
+
+            stats.latencies.forEach(latency => {
+                const bar = document.createElement('div');
+                bar.className = 'latency-bar';
+                bar.style.height = `${(latency / maxLatency) * 100}%`;
+                bar.title = `${latency}ms`;
+                chart.appendChild(bar);
+            });
+        }
+
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logs.appendChild(entry);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function printFinalStats() {
+            log('═══════════════════════════════════════', 'info');
+            log('FINAL STATISTICS', 'success');
+            log('═══════════════════════════════════════', 'info');
+            log(`Total Games: ${stats.totalGames}`, 'info');
+            log(`Total Moves: ${stats.totalMoves}`, 'info');
+            log(`Errors: ${stats.errors}`, 'info');
+            
+            if (stats.latencies.length > 0) {
+                const avg = (stats.latencies.reduce((a, b) => a + b, 0) / stats.latencies.length).toFixed(2);
+                const min = Math.min(...stats.latencies);
+                const max = Math.max(...stats.latencies);
+                log(`Latency - Avg: ${avg}ms, Min: ${min}ms, Max: ${max}ms`, 'info');
+            }
+            
+            log('═══════════════════════════════════════', 'info');
+        }
+
+        startBtn.addEventListener('click', startLoadTest);
+        stopBtn.addEventListener('click', stopLoadTest);
+
+        // Initialize chart
+        for (let i = 0; i < 50; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'latency-bar';
+            bar.style.height = '0%';
+            document.getElementById('latencyChart').appendChild(bar);
+        }
+    </script>
+</body>
+</html>
